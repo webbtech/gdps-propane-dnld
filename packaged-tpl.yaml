@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Gales Dips Propane Sales Report Download Service
+Parameters:
+  IAMUsername:
+    Default: sysadmin
+    Description: Username of the IAM user for this service
+    Type: String
+Resources:
+  LambdaExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - logs:*
+            Effect: Allow
+            Resource: arn:aws:logs:*:*:*
+          Version: '2012-10-17'
+        PolicyName: root
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - ssm:GetParameter*
+            - ssm:GetParametersByPath
+            Effect: Allow
+            Resource:
+              Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/prod/gdps-propane-dwnld*
+          Version: '2012-10-17'
+        PolicyName: FunctionParameterAccess
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - xray:PutTraceSegments
+            - xray:PutTelemetryRecords
+            Effect: Allow
+            Resource: '*'
+          Version: '2012-10-17'
+        PolicyName: FunctionXRayAccess
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - s3:*
+            Effect: Allow
+            Resource: arn:aws:s3:::gdps-propane-dwnld/reports/*
+          Version: '2012-10-17'
+        PolicyName: FunctionS3Access
+    Type: AWS::IAM::Role
+  PropaneDownloadFunc:
+    Properties:
+      CodeUri: s3://gdps-propane-dwnld/lambda/f46085e5a9253cc57a569e784ed71c86
+      Environment:
+        Variables:
+          Stage: prod
+      Events:
+        Create:
+          Properties:
+            Method: post
+            Path: /propane
+          Type: Api
+        Ping:
+          Properties:
+            Method: get
+            Path: /propane
+          Type: Api
+      Handler: propane
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Runtime: go1.x
+      Tags:
+        BillTo: Gales
+      Timeout: 15
+    Type: AWS::Serverless::Function
+Transform: AWS::Serverless-2016-10-31
