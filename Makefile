@@ -1,10 +1,19 @@
+# The KEY environment variable must be set to either stage or prod
+# KEY is confirmed below in the check_env directive
+# example:
+# stage: ENV=stage make
+# production: ENV=prod make
+
 include .env
 
 # found yolo at: https://azer.bike/journal/a-good-makefile-for-go/
 
-default: build
+AWS_STACK_NAME ?= $(PROJECT_NAME)
 
-deploy: build awsPackage awsDeploy
+default: check_env build awspackage awsdeploy
+
+check_env:
+	@echo -n "Your environment is $(ENV)? [y/N] " && read ans && [ $${ans:-N} = y ]
 
 clean:
 	@rm -rf dist
@@ -29,22 +38,35 @@ validate:
 run: build
 	sam local start-api -n env.json
 
-awsPackage:
-	aws cloudformation package \
-   --template-file template.yaml \
-   --output-template-file packaged-tpl.yaml \
-   --s3-bucket $(AWS_BUCKET_NAME) \
-   --s3-prefix lambda \
-   --profile $(AWS_PROFILE)
+awspackage:
+	@aws cloudformation package \
+   --template-file ${FILE_TEMPLATE} \
+   --output-template-file ${FILE_PACKAGE} \
+   --s3-bucket $(AWS_LAMBDA_BUCKET) \
+   --s3-prefix $(AWS_BUCKET_PREFIX) \
+   --profile $(AWS_PROFILE) \
+   --region $(AWS_REGION)
 
-awsDeploy:
-	aws cloudformation deploy \
-   --template-file packaged-tpl.yaml \
-   --stack-name $(AWS_STACK_NAME) \
-   --capabilities CAPABILITY_IAM \
-   --profile $(AWS_PROFILE)
+awsdeploy:
+	@aws cloudformation deploy \
+	--template-file ${FILE_PACKAGE} \
+  --stack-name $(AWS_STACK_NAME) \
+  --capabilities CAPABILITY_IAM \
+  --profile $(AWS_PROFILE) \
+	--parameter-overrides \
+		ParamCertificateArn=$(CERTIFICATE_ARN) \
+		ParamCustomDomainName=$(CUSTOM_DOMAIN_NAME) \
+		ParamENV=$(ENV) \
+		ParamHostedZoneId=$(HOSTED_ZONE_ID) \
+		ParamProjectName=$(PROJECT_NAME) \
+		ParamReportBucket=${AWS_REPORT_BUCKET} \
+		ParamUserPoolArn=$(USER_POOL_ARN)
 
 describe:
 	@aws cloudformation describe-stacks \
 		--region $(AWS_REGION) \
 		--stack-name $(AWS_STACK_NAME)
+
+outputs:
+	@ make describe \
+		| jq -r '.Stacks[0].Outputs'

@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: Gales Dips Propane Sales Report Download Service
+
+Parameters:
+  ParamBillTo:
+    Description: Required. Value of Tag key BillTo
+    Type: String
+    Default: Gales
+  ParamCertificateArn:
+    Description: Domain Certificate Arn
+    Type: String
+  ParamCustomDomainName:
+    Description: Custom Domain Name
+    Type: String
+  ParamENV:
+    Description: Stage environment
+    Type: String
+  ParamHostedZoneId:
+    Description: Hosted Zone ID
+    Type: String
+  ParamProjectName:
+    Description: Project name
+    Type: String
+  ParamReportBucket:
+    Description: AWS S3 report bucket
+    Type: String
+    Default: gdps-reports
+  ParamUserPoolArn:
+    Description: Cognito User Pool Arn
+    Type: String
+
+Resources:
+  RestApi:
+    Type: AWS::Serverless::Api
+    DeletionPolicy: Delete
+    DependsOn: Lambda
+    Properties:
+      StageName: Prod
+      EndpointConfiguration: 
+        Type: REGIONAL
+      Cors: # NOTE: these could be tightened up some
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'" # TODO: add an origin here
+      Auth:
+        DefaultAuthorizer: LambdaTokenAuthorizer
+        Authorizers:
+          LambdaTokenAuthorizer:
+            UserPoolArn: !Ref ParamUserPoolArn
+            # Identity:
+              # ReauthorizeEvery: 300
+              # ReauthorizeEvery: 1 # for testing
+
+      # Documentation for below: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#gateway-response-object
+      # Oddly, this property does not work with sam local
+      GatewayResponses:
+        UNAUTHORIZED:
+          StatusCode: 401
+          ResponseTemplates:
+            "application/json": '{ "message": $context.error.messageString }'
+          ResponseParameters:
+            Headers:
+              Access-Control-Expose-Headers: "'WWW-Authenticate'"
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'*'"
+
+      # Docs for this at: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#domain-configuration-object
+      Domain:
+        DomainName: !Ref ParamCustomDomainName
+        CertificateArn: !Ref ParamCertificateArn
+        EndpointConfiguration: "REGIONAL"
+        Route53:
+          HostedZoneId: !Ref ParamHostedZoneId
+          EvaluateTargetHealth: true
+          DistributionDomainName:
+            Value: !Sub "https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+
+  Lambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: go1.x
+      CodeUri: ./dist
+      Handler: propane
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 256
+      Environment:
+        Variables:
+          Stage: !Ref ParamENV
+      Tags:
+        BillTo: !Ref ParamBillTo
+      Events:
+        Ping:
+          Type: Api
+          Properties:
+            Path: /propane
+            Method: GET
+            RestApiId: !Ref RestApi
+            Auth:
+              Authorizer: NONE
+        Create:
+          Type: Api
+          Properties:
+            Path: /propane
+            Method: POST
+            RestApiId: !Ref RestApi
+            Auth:
+              Authorizer: LambdaTokenAuthorizer
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: FunctionLogAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: '*'
+      - PolicyName: FunctionXRayAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - xray:PutTraceSegments
+            - xray:PutTelemetryRecords
+            Resource: '*'
+      - PolicyName: FunctionS3Access
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource: 
+              Fn::Sub: arn:aws:s3:::${ParamReportBucket}/*
+
+Outputs:
+  ApiId:
+    Description: API ID
+    Value:
+      Ref: RestApi
+  ApiEndpoint:
+    Description: "API Prod stage endpoint"
+    Value: !Sub "https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  ApiArn:
+    Description: "API ARN"
+    Value: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/"
+  ApiFQDN:
+    Description: "API Domain Name"
+    Value: !Ref ParamCustomDomainName
+  ApiURL:
+    Description: "API Url"
+    Value: !Sub "https://${ParamCustomDomainName}/propane"
+  LambdaArn:
+    Description: "Lambda ARN"
+    Value: !GetAtt Lambda.Arn
+  LambdaRoleArn:
+    Description: "Lambda Role ARN"
+    Value: !GetAtt LambdaRole.Arn

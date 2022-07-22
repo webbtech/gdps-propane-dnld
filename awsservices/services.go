@@ -37,12 +37,12 @@ func NewS3(cfg *config.Config) (serv *S3Service, err error) {
 }
 
 // PutFile method
-func (s *S3Service) PutFile(prefix string, file *bytes.Buffer) (key string, err error) {
+func (s *S3Service) PutFile(fileObject string, file *bytes.Buffer) (key string, err error) {
 
 	uploader := s3manager.NewUploader(s.session)
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket:             aws.String(s.cfg.S3Bucket),
-		Key:                aws.String(prefix),
+		Key:                aws.String(fileObject),
 		Body:               file,
 		ContentType:        aws.String("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
 		ContentDisposition: aws.String("attachment"),
@@ -51,13 +51,13 @@ func (s *S3Service) PutFile(prefix string, file *bytes.Buffer) (key string, err 
 		return "", err
 	}
 
-	return prefix, nil
+	return fileObject, nil
 }
 
 // GetSignedURL method
-func (s *S3Service) GetSignedURL(prefix string, file *bytes.Buffer) (signedURL string, err error) {
+func (s *S3Service) GetSignedURL(fileObject string, file *bytes.Buffer) (signedURL string, err error) {
 
-	_, err = s.PutFile(prefix, file)
+	_, err = s.PutFile(fileObject, file)
 	if err != nil {
 		log.Errorf("Failed to upload file: %s", err.Error())
 		return "", err
@@ -66,7 +66,7 @@ func (s *S3Service) GetSignedURL(prefix string, file *bytes.Buffer) (signedURL s
 	svc := s3.New(s.session)
 	req, _ := svc.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String(s.cfg.S3Bucket),
-		Key:    aws.String(prefix),
+		Key:    aws.String(fileObject),
 	})
 
 	urlStr, err := req.Presign(15 * time.Minute)

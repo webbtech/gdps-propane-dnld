@@ -97,9 +97,7 @@ func (r *Report) CreateSignedURL() (url string, err error) {
 		return "", err
 	}
 
-	filePrefix := path.Join(r.cfg.S3FilePrefix, r.getFileName())
-
-	return s3Serv.GetSignedURL(filePrefix, &output)
+	return s3Serv.GetSignedURL(r.getFileName(), &output)
 }
 
 //

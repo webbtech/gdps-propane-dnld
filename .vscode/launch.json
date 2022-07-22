@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "name": "Launch file",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${file}"
+    },
+    {
+      "type": "aws-sam",
+      "request": "direct-invoke",
+      "name": "gdps-propane-dwnld:PropaneDownloadFunc",
+      "invokeTarget": {
+        "target": "template",
+        "templatePath": "template.yaml",
+        "logicalId": "PropaneDownloadFunc"
+      },
+      "lambda": {
+        "payload": {},
+        "environmentVariables": {}
+      }
+    }
+  ]
+}
